@@ -1,4 +1,4 @@
-# Attention-Based-Neural-Machine-Translation
+# Attention Based Encoder-Decoder Network for Neural Machine Translation
 
 Run by the following commands:
 
