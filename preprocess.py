@@ -8,7 +8,11 @@ import re
 import unicodedata
 from io import open
 import string
-import pickle
+# The cPickle module implements the same algorithm, in C instead of Python.
+# It is many times faster than the Python implementation, 
+# but does not allow the user to subclass from Pickle.
+import _pickle as cPickle
+from pickle import HIGHEST_PROTOCOL
 
 SOS_token = 0
 EOS_token = 1
@@ -123,8 +127,10 @@ def prepareData(lang1, lang2, reverse=True):
 def main():    
     input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
     # Saving the processed data:
-    with open('processed_text_Data.pkl', 'wb') as f:  
-        pickle.dump([input_lang, output_lang, pairs], f)
+    with open('processed_text_Data.save', 'wb') as f:  
+        cPickle.dump([input_lang, output_lang, pairs], f, 
+                     protocol=HIGHEST_PROTOCOL)
+        f.close()
 
 
 if __name__ == "__main__":
