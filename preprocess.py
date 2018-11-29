@@ -8,6 +8,7 @@ import re
 import unicodedata
 from io import open
 import string
+import pickle
 
 SOS_token = 0
 EOS_token = 1
@@ -101,3 +102,30 @@ def filterPair(p):
 
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
+
+'''
+    Dataset is prepared as sentences in French to English.
+    To translate from English to French, set reverse True
+'''
+def prepareData(lang1, lang2, reverse=True):
+    input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
+    print("Read %s sentence pairs" % len(pairs))
+    pairs = filterPairs(pairs)
+    print("Trimmed to %s sentence pairs" % len(pairs))
+    for pair in pairs:
+        input_lang.addSentence(pair[0])
+        output_lang.addSentence(pair[1])
+    print("Counted words:")
+    print(input_lang.name, input_lang.n_words)
+    print(output_lang.name, output_lang.n_words)
+    return input_lang, output_lang, pairs
+
+def main():    
+    input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
+    # Saving the processed data:
+    with open('processed_text_Data.pkl', 'wb') as f:  
+        pickle.dump([input_lang, output_lang, pairs], f)
+
+
+if __name__ == "__main__":
+    main()
