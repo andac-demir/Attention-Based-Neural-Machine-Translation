@@ -138,6 +138,7 @@ def load_model(encoder, decoder):
                                            map_location='cpu'))
         decoder.load_state_dict(torch.load("Model/decoder.model", 
                                            map_location='cpu'))
+        print("Loading model...")
     except RuntimeError:
         print("Runtime Error!")
         print(("Saved model must have the same network architecture with"
@@ -215,10 +216,10 @@ def train():
     trainIters(encoder, attn_decoder, 75000, print_every=256)
 
 def test():
-    pass
+    load_model(encoder, decoder)
 
 def translate():
-    pass
+    load_model(encoder, decoder)
 
 if __name__ == "__main__":
     fire.Fire()
