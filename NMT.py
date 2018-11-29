@@ -121,11 +121,9 @@ def tensorsFromPair(pair):
     target_tensor = tensorFromSentence(output_lang, pair[1])
     return (input_tensor, target_tensor)
 
-teacher_forcing_ratio = 0.5
-
-
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, 
-          decoder_optimizer, criterion, max_length=MAX_LENGTH):
+          decoder_optimizer, criterion, teacher_forcing_ratio=0.5,
+          max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -163,12 +161,9 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer,
     decoder_optimizer.step()
     return loss.item() / target_length
 
-
 def trainIters(encoder, decoder, n_iters, print_every=1000, 
-               plot_every=100, learning_rate=0.01):
-    plot_losses = []
+               learning_rate=0.01):
     print_loss_total = 0  # Reset every print_every
-    plot_loss_total = 0  # Reset every plot_every
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
     training_pairs = [tensorsFromPair(random.choice(pairs))
@@ -181,18 +176,15 @@ def trainIters(encoder, decoder, n_iters, print_every=1000,
         loss = train(input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
-        plot_loss_total += loss
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
-        if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
-            plot_losses.append(plot_loss_avg)
-            plot_loss_total = 0
-
+            print('(%d %d%%) %.4f' % (iter, iter / n_iters * 100, print_loss_avg))
 
 
 if __name__ == "__main__":
-    fire.Fire()
+    hidden_size = 256
+    encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+    attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+    trainIters(encoder1, attn_decoder1, 75000, print_every=256)
+    #fire.Fire()
