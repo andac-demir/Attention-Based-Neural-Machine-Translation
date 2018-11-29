@@ -121,9 +121,33 @@ def tensorsFromPair(pair):
     target_tensor = tensorFromSentence(output_lang, pair[1])
     return (input_tensor, target_tensor)
 
-def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, 
-          decoder_optimizer, criterion, teacher_forcing_ratio=0.5,
-          max_length=MAX_LENGTH):
+'''
+    Saves the models to the directory Model
+'''
+def save_model(encoder, decoder):
+    torch.save(encoder.state_dict(), f="Model/encoder.model")
+    torch.save(decoder.state_dict(), f="Model/decoder.model")
+    print("Models saved successfully.")
+
+'''
+    Loads the network trained by GPU to CPU for inference. 
+'''
+def load_model(encoder, decoder):
+    try:
+        encoder.load_state_dict(torch.load("Model/encoder.model", 
+                                           map_location='cpu'))
+        decoder.load_state_dict(torch.load("Model/decoder.model", 
+                                           map_location='cpu'))
+    except RuntimeError:
+        print("Runtime Error!")
+        print(("Saved model must have the same network architecture with"
+               " the CopyModel.\nRe-train and save again or fix the" 
+               " architecture of CopyModel."))
+        exit(1) # stop execution with error
+
+def train_network(input_tensor, target_tensor, encoder, decoder, 
+                  encoder_optimizer, decoder_optimizer, criterion, 
+                  teacher_forcing_ratio=0.5, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -173,18 +197,28 @@ def trainIters(encoder, decoder, n_iters, print_every=1000,
         training_pair = training_pairs[iter - 1]
         input_tensor = training_pair[0]
         target_tensor = training_pair[1]
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion)
+        loss = train_network(input_tensor, target_tensor, encoder,
+                             decoder, encoder_optimizer, decoder_optimizer, 
+                             criterion)
         print_loss_total += loss
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every
             print_loss_total = 0
             print('(%d %d%%) %.4f' % (iter, iter / n_iters * 100, print_loss_avg))
+    save_model(encoder, decoder)
+    
+def train():
+    hidden_size = 256
+    encoder = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+    attn_decoder = AttnDecoderRNN(hidden_size, output_lang.n_words, 
+                                   dropout_p=0.1).to(device)
+    trainIters(encoder, attn_decoder, 75000, print_every=256)
 
+def test():
+    pass
+
+def translate():
+    pass
 
 if __name__ == "__main__":
-    hidden_size = 256
-    encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-    attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
-    trainIters(encoder1, attn_decoder1, 75000, print_every=256)
-    #fire.Fire()
+    fire.Fire()
