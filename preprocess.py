@@ -90,6 +90,7 @@ def readLangs(lang1, lang2, reverse=False):
         input_lang = Lang(lang2)
         output_lang = Lang(lang1)
     else:
+        pairs = [list(p) for p in pairs]
         input_lang = Lang(lang1)
         output_lang = Lang(lang2)
     return input_lang, output_lang, pairs
@@ -99,22 +100,26 @@ def readLangs(lang1, lang2, reverse=False):
     something quickly, we trim the data set to only relatively short
     and simple sentences. Here the maximum length is 10 words.
 '''
-def filterPair(p):
-    return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+def filterPair(p, reverse):
+    if reverse == True:
+        return len(p[0].split(' ')) < MAX_LENGTH and \
+            len(p[1].split(' ')) < MAX_LENGTH and \
+            p[1].startswith(eng_prefixes)
+    else:
+        return len(p[0].split(' ')) < MAX_LENGTH and \
+               len(p[1].split(' ')) < MAX_LENGTH and \
+               p[0].startswith(eng_prefixes)
 
-def filterPairs(pairs):
-    return [pair for pair in pairs if filterPair(pair)]
+def filterPairs(pairs, reverse):
+    return [pair for pair in pairs if filterPair(pair, reverse)]
 
 '''
-    Dataset is prepared as sentences in French to English.
-    To translate from English to French, set reverse True
+    To translate from French to English, set reverse True
 '''
-def prepareData(lang1, lang2, reverse=True):
+def prepareData(lang1, lang2, reverse=False):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
     print("Read %s sentence pairs" % len(pairs))
-    pairs = filterPairs(pairs)
+    pairs = filterPairs(pairs, reverse)
     print("Trimmed to %s sentence pairs" % len(pairs))
     for pair in pairs:
         input_lang.addSentence(pair[0])
@@ -125,7 +130,7 @@ def prepareData(lang1, lang2, reverse=True):
     return input_lang, output_lang, pairs
 
 def main():    
-    input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
+    input_lang, output_lang, pairs = prepareData('eng', 'fra')
     # Saving the processed data:
     with open('processed_text_Data.save', 'wb') as f:  
         cPickle.dump([input_lang, output_lang, pairs], f, 
