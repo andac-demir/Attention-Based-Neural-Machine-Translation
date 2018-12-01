@@ -19,6 +19,7 @@ from preprocess import MAX_LENGTH, SOS_token, EOS_token
 # cPickle provides faster serializability than pickle and JSON
 import _pickle as cPickle 
 import re
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 with open('processed_text_Data.save', 'rb') as f:
@@ -184,8 +185,62 @@ def train():
     attn_decoder = AttnDecoderRNN(output_lang.n_words).to(device)
     trainIters(encoder, attn_decoder, 100000)
 
-def test():
+def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
+    with torch.no_grad():
+        input_tensor = tensorFromSentence(input_lang, sentence)
+        input_length = input_tensor.size()[0]
+        encoder_hidden = encoder.initHidden()
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, 
+                                        device=device)
+        for ei in range(input_length):
+            encoder_output, encoder_hidden = encoder(input_tensor[ei],
+                                                        encoder_hidden)
+            encoder_outputs[ei] += encoder_output[0, 0]
+        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+        decoder_hidden = encoder_hidden
+        decoded_words = []
+        decoder_attentions = torch.zeros(max_length, max_length)
+        for di in range(max_length):
+            decoder_output, decoder_hidden, decoder_attention = decoder(
+                decoder_input, decoder_hidden, encoder_outputs)
+            decoder_attentions[di] = decoder_attention.data
+            topv, topi = decoder_output.data.topk(1)
+            if topi.item() == EOS_token:
+                break
+            else:
+                decoded_words.append(output_lang.index2word[topi.item()])
+            decoder_input = topi.squeeze().detach()
+    return decoded_words, decoder_attentions[:di + 1]
+
+'''
+    Testing on randomly chosen 1000 French sentences
+    Computes the bleu score by comparing the translated English sentence
+    and the actual English sentencesand evaluation
+    Randomly chooses 1000 English sentences from the dataset to do testing
+'''   
+def test(n=1000, verbose=False):
+    encoder = EncoderRNN(input_lang.n_words).to(device)
+    decoder = AttnDecoderRNN(output_lang.n_words).to(device)
     load_model(encoder, decoder)
+    smoothie = SmoothingFunction().method4
+    score = 0
+    for _ in range(n):
+        pair = random.choice(pairs)
+        output_words, _ = evaluate(encoder, decoder, pair[0])
+        output_sentence = ' '.join(output_words)
+        # Compute the bleu score:
+        score += sentence_bleu([pair[1].split()], output_words, 
+                               smoothing_function=smoothie) 
+        # Prints the test sentence, actual translation and 
+        # the predicted translation if verbose is set True:
+        if verbose == True:
+            print('Input Sentence: ', pair[0]) 
+            print('Actual Translation: ', pair[1])
+            print('Predicted Translation: ', output_sentence)
+            print('')
+    # prints the average of the bleu score:
+    avg = score / n
+    print("Bleu score is: ", '{:.2%}'.format(avg))
 
 def process_input(input_to_translate):
     input_to_translate = input_to_translate.lower().strip()
@@ -212,37 +267,9 @@ def translate():
     # Gets input from the user
     input_to_translate = input("Enter your sentence: ")
     input_to_translate = process_input(input_to_translate)
-    print(input_to_translate)
-    def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
-        with torch.no_grad():
-            input_tensor = tensorFromSentence(input_lang, sentence)
-            input_length = input_tensor.size()[0]
-            encoder_hidden = encoder.initHidden()
-            encoder_outputs = torch.zeros(max_length, encoder.hidden_size, 
-                                          device=device)
-            for ei in range(input_length):
-                encoder_output, encoder_hidden = encoder(input_tensor[ei],
-                                                         encoder_hidden)
-                encoder_outputs[ei] += encoder_output[0, 0]
-            decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
-            decoder_hidden = encoder_hidden
-            decoded_words = []
-            decoder_attentions = torch.zeros(max_length, max_length)
-            for di in range(max_length):
-                decoder_output, decoder_hidden, decoder_attention = decoder(
-                    decoder_input, decoder_hidden, encoder_outputs)
-                decoder_attentions[di] = decoder_attention.data
-                topv, topi = decoder_output.data.topk(1)
-                if topi.item() == EOS_token:
-                    decoded_words.append('<EOS>')
-                    break
-                else:
-                    decoded_words.append(output_lang.index2word[topi.item()])
-                decoder_input = topi.squeeze().detach()
-        return decoded_words, decoder_attentions[:di + 1]
-
     output_words, _ = evaluate(encoder, decoder, input_to_translate)
     output_sentence = ' '.join(output_words)
+    output_sentence = output_sentence[:-2] + input_to_translate[-1]
     print("French translation: ", output_sentence)
 
 
