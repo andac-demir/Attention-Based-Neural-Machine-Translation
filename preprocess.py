@@ -8,14 +8,14 @@ import re
 import unicodedata
 from io import open
 import string
+import random
 # The cPickle module implements the same algorithm, in C instead of Python.
 # It is many times faster than the Python implementation, 
 # but does not allow the user to subclass from Pickle.
 import _pickle as cPickle
 from pickle import HIGHEST_PROTOCOL
 
-SOS_token = 0
-EOS_token = 1
+SOS_token, EOS_token = 0, 1
 MAX_LENGTH = 10
 eng_prefixes = (
     "i am ", "i m ",
@@ -56,17 +56,12 @@ class Lang:
             self.word2count[word] += 1
 
 
-# Turn a Unicode string to plain ASCII, thanks to
-# http://stackoverflow.com/a/518232/2809427
-def unicodeToAscii(s):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', s)
-        if unicodedata.category(c) != 'Mn'
-    )
-
-# Lowercase, trim most punctuation, and remove non-letter characters
+# Convert to lowercase, turn a Unicode string to plain ASCII, 
+# trim most punctuation, and remove non-letter characters
 def normalizeString(s):
-    s = unicodeToAscii(s.lower().strip())
+    s = s.lower().strip()
+    s = ''.join(c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn')
     s = re.sub(r"([.!?])", r" \1", s)
     s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
     return s
@@ -81,7 +76,7 @@ def normalizeString(s):
 def readLangs(lang1, lang2, reverse=False):
     # Read the file and split into lines
     lines = open('%s-%s.txt' % (lang1, lang2), encoding='utf-8').\
-        read().strip().split('\n')
+            read().strip().split('\n')
     # Split every line into pairs and normalize
     pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
     # Reverse pairs, make Lang instances
@@ -100,17 +95,17 @@ def readLangs(lang1, lang2, reverse=False):
     something quickly, we trim the data set to only relatively short
     and simple sentences. Here the maximum length is 10 words.
 '''
-def filterPair(p, reverse):
-    if reverse == True:
-        return len(p[0].split(' ')) < MAX_LENGTH and \
-            len(p[1].split(' ')) < MAX_LENGTH and \
-            p[1].startswith(eng_prefixes)
-    else:
-        return len(p[0].split(' ')) < MAX_LENGTH and \
-               len(p[1].split(' ')) < MAX_LENGTH and \
-               p[0].startswith(eng_prefixes)
-
 def filterPairs(pairs, reverse):
+    def filterPair(p, reverse):
+        if reverse == True:
+            return len(p[0].split(' ')) < MAX_LENGTH and \
+                   len(p[1].split(' ')) < MAX_LENGTH and \
+                   p[1].startswith(eng_prefixes)
+        else:
+            return len(p[0].split(' ')) < MAX_LENGTH and \
+                   len(p[1].split(' ')) < MAX_LENGTH and \
+                   p[0].startswith(eng_prefixes)
+    
     return [pair for pair in pairs if filterPair(pair, reverse)]
 
 '''
@@ -118,22 +113,23 @@ def filterPairs(pairs, reverse):
 '''
 def prepareData(lang1, lang2, reverse=False):
     input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
-    print("Read %s sentence pairs" % len(pairs))
     pairs = filterPairs(pairs, reverse)
-    print("Trimmed to %s sentence pairs" % len(pairs))
     for pair in pairs:
         input_lang.addSentence(pair[0])
         output_lang.addSentence(pair[1])
-    print("Counted words:")
-    print(input_lang.name, input_lang.n_words)
-    print(output_lang.name, output_lang.n_words)
     return input_lang, output_lang, pairs
 
 def main():    
     input_lang, output_lang, pairs = prepareData('eng', 'fra')
+    random.shuffle(pairs)
+    N_samples = len(pairs)
+    N_train = int(0.80 * N_samples)
+    # test pairs and train pairs:
+    train_pairs = pairs[:N_train]
+    test_pairs = pairs[N_train:] 
     # Saving the processed data:
     with open('processed_text_Data.save', 'wb') as f:  
-        cPickle.dump([input_lang, output_lang, pairs], f, 
+        cPickle.dump([input_lang, output_lang, train_pairs, test_pairs], f, 
                      protocol=HIGHEST_PROTOCOL)
         f.close()
 
