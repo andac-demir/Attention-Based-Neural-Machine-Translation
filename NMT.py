@@ -3,7 +3,7 @@ This implements a Seq to Seq network (Encoder-Decoder Network),
 in which two recurrent nets work together to transform one sequence to another. 
 An encoder network condenses an input sequence into a vector, 
 and a decoder network unfolds that vector into a new sequence.
-To improve upon this model we’ll use an attention mechanism, 
+To improve upon this model we'll use an attention mechanism, 
 which lets the decoder learn to focus over a specific range 
 of the input sequence.
 '''
@@ -23,12 +23,12 @@ from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 with open('processed_text_Data.save', 'rb') as f:
-    input_lang, output_lang, pairs = cPickle.load(f)
+    input_lang, output_lang, train_pairs, test_pairs = cPickle.load(f)
     f.close()
 
-class EncoderRNN(nn.Module):
+class encoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size=256):
-        super(EncoderRNN, self).__init__()
+        super(encoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.gru = nn.GRU(hidden_size, hidden_size)
@@ -43,10 +43,10 @@ class EncoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-class AttnDecoderRNN(nn.Module):
+class attnDecoderRNN(nn.Module):
     def __init__(self, output_size, hidden_size=256, dropout_p=0.1, 
                  max_length=MAX_LENGTH):
-        super(AttnDecoderRNN, self).__init__()
+        super(attnDecoderRNN, self).__init__()
         self.output_size = output_size
         self.hidden_size = hidden_size
         self.dropout_p = dropout_p
@@ -76,11 +76,8 @@ class AttnDecoderRNN(nn.Module):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
 
-def indexesFromSentence(lang, sentence):
-    return [lang.word2index[word] for word in sentence.split(' ')]
-
 def tensorFromSentence(lang, sentence):
-    indexes = indexesFromSentence(lang, sentence)
+    indexes = [lang.word2index[word] for word in sentence.split(' ')]
     indexes.append(EOS_token)
     return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
@@ -92,7 +89,7 @@ def tensorsFromPair(pair):
 '''
     Saves the models to the directory Model
 '''
-def save_model(encoder, decoder):
+def saveModel(encoder, decoder):
     torch.save(encoder.state_dict(), f="Model/encoder.model")
     torch.save(decoder.state_dict(), f="Model/decoder.model")
     print("Models saved successfully.")
@@ -100,7 +97,7 @@ def save_model(encoder, decoder):
 '''
     Loads the network trained by GPU to CPU for inference. 
 '''
-def load_model(encoder, decoder):
+def loadModel(encoder, decoder):
     try:
         encoder.load_state_dict(torch.load("Model/encoder.model", 
                                            map_location='cpu'))
@@ -114,7 +111,7 @@ def load_model(encoder, decoder):
                " architecture of CopyModel."))
         exit(1) # stop execution with error
 
-def train_network(input_tensor, target_tensor, encoder, decoder, 
+def trainNetwork(input_tensor, target_tensor, encoder, decoder, 
                   encoder_optimizer, decoder_optimizer, criterion, 
                   teacher_forcing_ratio=0.5, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
@@ -122,12 +119,13 @@ def train_network(input_tensor, target_tensor, encoder, decoder,
     decoder_optimizer.zero_grad()
     input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, 
+                                  device=device)
     loss = 0
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
+    for i in range(input_length):
+        encoder_output, encoder_hidden = encoder(input_tensor[i], 
+                                                 encoder_hidden)
+        encoder_outputs[i] = encoder_output[0, 0]
     decoder_input = torch.tensor([[SOS_token]], device=device)
     decoder_hidden = encoder_hidden
     if random.random() < teacher_forcing_ratio:
@@ -136,20 +134,21 @@ def train_network(input_tensor, target_tensor, encoder, decoder,
         use_teacher_forcing = False
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
-        for di in range(target_length):
+        for j in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
-            loss += criterion(decoder_output, target_tensor[di])
-            decoder_input = target_tensor[di]  # Teacher forcing
+            loss += criterion(decoder_output, target_tensor[j])
+            decoder_input = target_tensor[j]  # Teacher forcing
     else:
         # Without teacher forcing: use its own predictions as the next input
-        for di in range(target_length):
+        for j in range(target_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
             topv, topi = decoder_output.topk(1)
-            decoder_input = topi.squeeze().detach()  # detach from history as input
+            # detach from history as input
+            decoder_input = topi.squeeze().detach()  
 
-            loss += criterion(decoder_output, target_tensor[di])
+            loss += criterion(decoder_output, target_tensor[j])
             if decoder_input.item() == EOS_token:
                 break
     loss.backward()
@@ -159,90 +158,89 @@ def train_network(input_tensor, target_tensor, encoder, decoder,
 
 def trainIters(encoder, decoder, n_iters, print_every=256, 
                learning_rate=0.01):
-    print_loss_total = 0  # Reset every print_every
+    total_loss = 0  
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
-    training_pairs = [tensorsFromPair(random.choice(pairs))
+    training_pairs = [tensorsFromPair(random.choice(train_pairs))
                       for i in range(n_iters)]
     criterion = nn.NLLLoss()
     for iter in range(1, n_iters + 1):
         training_pair = training_pairs[iter - 1]
         input_tensor = training_pair[0]
         target_tensor = training_pair[1]
-        loss = train_network(input_tensor, target_tensor, encoder,
-                             decoder, encoder_optimizer, decoder_optimizer, 
-                             criterion)
-        print_loss_total += loss
+        loss = trainNetwork(input_tensor, target_tensor, encoder,
+                            decoder, encoder_optimizer, decoder_optimizer, 
+                            criterion)
+        total_loss += loss
         if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
-            print_loss_total = 0
+            loss_avg = total_loss / print_every
+            total_loss = 0
             print('(%d %d%%) %.4f' % (iter, iter / n_iters * 100, 
-                  print_loss_avg))
-    save_model(encoder, decoder)
+                  loss_avg))
+    saveModel(encoder, decoder)
     
 def train():
-    encoder = EncoderRNN(input_lang.n_words).to(device)
-    attn_decoder = AttnDecoderRNN(output_lang.n_words).to(device)
+    encoder = encoderRNN(input_lang.n_words).to(device)
+    attn_decoder = attnDecoderRNN(output_lang.n_words).to(device)
     trainIters(encoder, attn_decoder, 100000)
 
-def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
+def eval(encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
         encoder_hidden = encoder.initHidden()
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, 
-                                        device=device)
-        for ei in range(input_length):
-            encoder_output, encoder_hidden = encoder(input_tensor[ei],
-                                                        encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
+                                      device=device)
+        for i in range(input_length):
+            encoder_output, encoder_hidden = encoder(input_tensor[i],
+                                                     encoder_hidden)
+            encoder_outputs[i] += encoder_output[0, 0]
+        decoder_input = torch.tensor([[SOS_token]], device=device)  
         decoder_hidden = encoder_hidden
         decoded_words = []
         decoder_attentions = torch.zeros(max_length, max_length)
-        for di in range(max_length):
+        for j in range(max_length):
             decoder_output, decoder_hidden, decoder_attention = decoder(
                 decoder_input, decoder_hidden, encoder_outputs)
-            decoder_attentions[di] = decoder_attention.data
+            decoder_attentions[j] = decoder_attention.data
             topv, topi = decoder_output.data.topk(1)
             if topi.item() == EOS_token:
                 break
             else:
                 decoded_words.append(output_lang.index2word[topi.item()])
             decoder_input = topi.squeeze().detach()
-    return decoded_words, decoder_attentions[:di + 1]
+    return decoded_words, decoder_attentions[:j + 1]
 
 '''
     Testing on randomly chosen 1000 French sentences
     Computes the bleu score by comparing the translated English sentence
     and the actual English sentencesand evaluation
-    Randomly chooses 1000 English sentences from the dataset to do testing
 '''   
-def test(n=1000, verbose=False):
-    encoder = EncoderRNN(input_lang.n_words).to(device)
-    decoder = AttnDecoderRNN(output_lang.n_words).to(device)
-    load_model(encoder, decoder)
+def test(verbose=False):
+    encoder = encoderRNN(input_lang.n_words).to(device)
+    decoder = attnDecoderRNN(output_lang.n_words).to(device)
+    loadModel(encoder, decoder)
     smoothie = SmoothingFunction().method4
-    score = 0
-    for _ in range(n):
-        pair = random.choice(pairs)
-        output_words, _ = evaluate(encoder, decoder, pair[0])
+    score, n = 0, 0
+    for test_pair in test_pairs:
+        output_words, _ = eval(encoder, decoder, test_pair[0])
         output_sentence = ' '.join(output_words)
         # Compute the bleu score:
-        score += sentence_bleu([pair[1].split()], output_words, 
+        score += sentence_bleu([test_pair[1].split()], output_words, 
                                smoothing_function=smoothie) 
+        n += 1
         # Prints the test sentence, actual translation and 
         # the predicted translation if verbose is set True:
         if verbose == True:
-            print('Input Sentence: ', pair[0]) 
-            print('Actual Translation: ', pair[1])
+            print('Input Sentence: ', test_pair[0]) 
+            print('Actual Translation: ', test_pair[1])
             print('Predicted Translation: ', output_sentence)
             print('')
     # prints the average of the bleu score:
     avg = score / n
     print("Bleu score is: ", '{:.2%}'.format(avg))
 
-def process_input(input_to_translate):
+def processInput(input_to_translate):
     input_to_translate = input_to_translate.lower().strip()
     input_to_translate = re.sub(r"([.!?])", r" \1", input_to_translate)
     input_to_translate = re.sub(r"[^a-zA-Z.!?]+", r" ", input_to_translate)
@@ -261,13 +259,13 @@ def process_input(input_to_translate):
     return input_to_translate    
 
 def translate():
-    encoder = EncoderRNN(input_lang.n_words).to(device)
-    decoder = AttnDecoderRNN(output_lang.n_words).to(device)
-    load_model(encoder, decoder)
+    encoder = encoderRNN(input_lang.n_words).to(device)
+    decoder = attnDecoderRNN(output_lang.n_words).to(device)
+    loadModel(encoder, decoder)
     # Gets input from the user
     input_to_translate = input("Enter your sentence: ")
-    input_to_translate = process_input(input_to_translate)
-    output_words, _ = evaluate(encoder, decoder, input_to_translate)
+    input_to_translate = processInput(input_to_translate)
+    output_words, _ = eval(encoder, decoder, input_to_translate)
     output_sentence = ' '.join(output_words)
     output_sentence = output_sentence[:-2] + input_to_translate[-1]
     print("French translation: ", output_sentence)
