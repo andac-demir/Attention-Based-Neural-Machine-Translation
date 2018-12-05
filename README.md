@@ -7,3 +7,5 @@ python NMT.py train
 python NMT.py test
 
 python NMT.py translate
+
+Translation from Englist to French and vice versa.
